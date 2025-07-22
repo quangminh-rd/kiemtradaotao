@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>BÀI KIỂM TRA</title>
+    <link rel="stylesheet" href="./public/style.css">
+    <script src="./public/script.js" defer></script>
+    <script src="./public/export-excel.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.2.0/exceljs.min.js"></script>
+</head>
+
+<body>
+    <div class="quiz-wrapper">
+        <div class="quiz-header">
+            <img src="https://i.imgur.com/vfwvNd4.jpg" alt="Logo" />
+            <h2>BÀI KIỂM TRA</h2>
+        </div>
+        <div id="userInfo" class="user-info">
+            <label>Họ và Tên:
+                <input type="text" name="hoTen" placeholder="Nhập họ tên..." required>
+            </label>
+            <label>Chức danh:
+                <input type="text" name="chucDanh" placeholder="Nhập chức danh...">
+            </label>
+            <label>Số điện thoại:
+                <input type="tel" name="soDienThoai" placeholder="Nhập số điện thoại...">
+            </label>
+            <label>Bộ phận:
+                <input type="text" name="boPhan" placeholder="Nhập bộ phận...">
+            </label>
+            <label>Email:
+                <input type="email" name="email" placeholder="Nhập email...">
+            </label>
+        </div>
+        <form id="quizForm"></form>
+        <button type="button" onclick="submitQuiz()">Nộp bài</button>
+        <div id="quizResult"></div>
+    </div>
+</body>
+
+</html>
