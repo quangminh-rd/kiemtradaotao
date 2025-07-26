@@ -229,6 +229,11 @@
             background-color: #c82333;
         }
 
+        label[style] {
+            border-radius: 6px;
+            padding: 4px;
+        }
+
         #countdownTimerFixed {
             position: fixed;
             top: 30px;

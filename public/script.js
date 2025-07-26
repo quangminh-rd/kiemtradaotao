@@ -1,3 +1,5 @@
+let startTime = Date.now();  // đánh dấu thời điểm bắt đầu làm bài
+
 function getDataFromURI() {
     const url = window.location.href;
 
@@ -63,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const uriData = getDataFromURI();
 
     if (uriData.mode === 'xemketqua') {
+        document.getElementById('countdownTimerFixed').style.display = 'none';  // Ẩn đồng hồ
         loadGapiAndLoadKetQua();
     } else {
         loadGapiAndInitialize(); // mặc định là làm bài
@@ -162,7 +165,7 @@ async function loadQuiz() {
 
             const qDiv = document.createElement("div");
             qDiv.className = "question-block";
-            qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question}</p>`;
+            qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question} (${diemSo} điểm)</p>`;
 
             if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
                 const optDiv = document.createElement("div");
@@ -237,6 +240,12 @@ function submitQuiz() {
     const boPhan = document.querySelector('[name="boPhan"]').value.trim();
     const soDienThoai = document.querySelector('[name="soDienThoai"]').value.trim();
     const email = document.querySelector('[name="email"]').value.trim();
+    const endTime = Date.now();
+    const durationMs = endTime - startTime;
+    const durationSec = Math.floor(durationMs / 1000);
+    const durationMin = Math.floor(durationSec / 60);
+    const durationFormatted = `${durationMin} phút ${durationSec % 60} giây`;
+
     const now = new Date().toLocaleString('vi-VN');
 
     const total = window.correctAnswers.length;
@@ -251,6 +260,33 @@ function submitQuiz() {
     submitButton.disabled = true;
     submitButton.classList.add('loading');
     submitButton.textContent = "Đang nộp bài...";
+    document.getElementById('countdownTimerFixed').style.display = 'none';
+
+    const listDapAnText = [];
+
+    for (let i = 0; i < total; i++) {
+        const type = window.questionTypes[i];
+        const correctKeys = (window.correctAnswers[i] || '').split(',').map(c => c.trim().toUpperCase());
+        let correctTexts = [];
+
+        if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
+            const inputs = document.querySelectorAll(`[name="q${i}"]`);
+            const options = Array.from(inputs).map(input => {
+                const label = input.closest('label');
+                const span = label?.querySelector('span');
+                return span ? span.textContent.trim().replace(/^[A-Z]\.\s*/, '') : '';
+            });
+            correctTexts = correctKeys.map(k => {
+                const index = k.charCodeAt(0) - 65;
+                return options[index] || '';
+            });
+        } else {
+            // Với câu tự luận, số, ngày tháng thì không có đáp án đúng rõ ràng
+            correctTexts = ['(Không áp dụng)'];
+        }
+
+        listDapAnText.push(correctTexts.join(', '));
+    }
 
     for (let i = 0; i < total; i++) {
         const type = window.questionTypes[i];
@@ -309,6 +345,7 @@ function submitQuiz() {
         }
 
         cauTraloi.push(userAnswer);
+
     }
 
     // Gửi dữ liệu đến webhook
@@ -328,7 +365,9 @@ function submitQuiz() {
             tongDiemToiDa: maxScore,
             soCauDung: soCauDung,
             tongSoCau: total,
+            thoiGianLamBai: durationFormatted,  // thêm dòng này
             cauHoi: cauHoi,
+            listDapAn: listDapAnText,
             cauTraloi: cauTraloi
         })
     })
@@ -345,25 +384,38 @@ function submitQuiz() {
                 <h3>THÔNG BÁO</h3>
                 <p class="success-message">Bài làm của bạn đã được ghi nhận thành công!</p>
                 <p><strong>Tổng điểm:</strong> ${score}/${maxScore}</p>
-                <p>Kết quả: ${soCauDung}/${total} câu đúng</p>
-                <p>Thời gian nộp: ${now}</p>
-            `;
+                <p><strong>Kết quả:</strong> ${soCauDung}/${total} câu đúng</p>
+                <p><strong>Thời gian nộp:</strong> ${now}</p>
+                <p><strong>Thời gian làm bài:</strong> ${durationFormatted}</p>
+                `;
             document.querySelector('.quiz-wrapper').appendChild(statusDiv);
 
-            // Ghi kết quả cơ bản vào Google Sheet
-            writeResultToSheet([
-                hoTen,
-                chucDanh,
-                boPhan,
-                soDienThoai,
-                email,
-                now,
-                score,
-                maxScore,
-                soCauDung,
-                total,
-                "ĐÃ NỘP"
-            ]);
+            for (let i = 0; i < total; i++) {
+                const type = window.questionTypes[i];
+                const correct = (window.correctAnswers[i] || '').toString().split(',').map(a => a.trim());
+                const inputs = document.querySelectorAll(`[name="q${i}"]`);
+
+                if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
+                    inputs.forEach(input => {
+                        const label = input.closest('label');
+                        const span = label.querySelector('span');
+                        const val = input.value;
+
+                        if (correct.includes(val)) {
+                            // Tô xanh cho đáp án đúng
+                            label.style.backgroundColor = '#d4edda';
+                            label.style.border = '1px solid #28a745';
+                        }
+
+                        if (input.checked && !correct.includes(val)) {
+                            // Tô đỏ cho đáp án người chọn nhưng sai
+                            label.style.backgroundColor = '#f8d7da';
+                            label.style.border = '1px solid #dc3545';
+                        }
+                    });
+                }
+            }
+
         })
         .catch(err => {
             console.error("Lỗi gửi dữ liệu:", err);
@@ -373,26 +425,6 @@ function submitQuiz() {
             submitButton.classList.remove('loading');
             submitButton.textContent = "Nộp bài";
         });
-}
-
-
-
-async function writeResultToSheet(data) {
-    try {
-        const response = await gapi.client.sheets.spreadsheets.values.append({
-            spreadsheetId: SPREADSHEET_ID,
-            range: "ket_qua_kiem_tra!A1",
-            valueInputOption: "USER_ENTERED",
-            insertDataOption: "INSERT_ROWS",
-            resource: {
-                values: [data]
-            }
-        });
-        console.log("Ghi dữ liệu thành công", response);
-    } catch (error) {
-        console.error("Lỗi khi ghi dữ liệu:", error);
-        // Không cần alert ở đây vì đã có thông báo ở nơi khác
-    }
 }
 
 async function loadKetQua() {
@@ -435,6 +467,7 @@ async function loadKetQua() {
     const soDienThoai = row[index('so_dien_thoai')] || '';
     const email = row[index('email')] || '';
     const ngayGioNop = row[index('ngay_gio_nop')] || '';
+    const thoiGiamlam = row[index('thoi_gian_lam_bai')] || '';
     const tongDiemDatDuoc = row[index('so_diem')] || '0';
     const tongDiemToiDa = row[index('tong_diem')] || '0';
     const soCauDung = row[index('so_cau_dung')] || '0';
@@ -468,6 +501,7 @@ async function loadKetQua() {
                 <p><strong>Số câu đúng:</strong> <span style="color: red; font-weight: bold;">${soCauDung}/${tongSoCau}</span></p>
                 <p><strong>Số điểm:</strong> <span style="color: red; font-weight: bold;">${tongDiemDatDuoc}/${tongDiemToiDa}</span></p>
                 <p><strong>Thời gian nộp:</strong> <span style="color: red; font-weight: bold;">${ngayGioNop}</span></p>
+                <p><strong>Thời gian làm bài:</strong> <span style="color: red; font-weight: bold;">${thoiGiamlam}</span></p>
             </div>
     `;
 
@@ -478,12 +512,14 @@ async function loadKetQua() {
     document.querySelector('button[type="button"]').style.display = 'none';
 
     const listCauHoiRaw = row[index('list_cau_hoi')] || '[]';
+    const listDapAnRaw = row[index('list_dap_an')] || '[]';
     const listTraLoiRaw = row[index('list_cau_tra_loi')] || '[]';
 
-    let listCauHoi = [], listTraLoi = [];
+    let listCauHoi = [], listDapAn = [], listTraLoi = [];
 
     try {
         listCauHoi = JSON.parse(listCauHoiRaw);
+        listDapAn = JSON.parse(listDapAnRaw);
         listTraLoi = JSON.parse(listTraLoiRaw);
     } catch (e) {
         document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Dữ liệu JSON không hợp lệ.</p>`;
@@ -496,10 +532,17 @@ async function loadKetQua() {
     listCauHoi.forEach((cau, i) => {
         const div = document.createElement("div");
         div.className = "question-block";
+        const dapAnDung = listDapAn[i] || '';
+        const traLoi = listTraLoi[i] || '(Không trả lời)';
+        const isCorrect = traLoi.trim() === dapAnDung.trim();
+        const traLoiColor = isCorrect ? '#28a745' : '#dc3545';
+
         div.innerHTML = `
-        <p><strong>Câu ${i + 1}:</strong> ${cau}</p>
-        <p style="margin-left: 10px; color: #007bff;"><strong>Câu trả lời:</strong> ${listTraLoi[i] || '(Không trả lời)'}</p>
-        `;
+                <p><strong>Câu ${i + 1}:</strong> ${cau}</p>
+                <p style="margin-left: 10px; color: ${traLoiColor};">Câu trả lời: ${traLoi}</p>
+                <p style="margin-left: 10px; color: #28a745;">Đáp án đúng: ${dapAnDung}</p>
+            `;
+
         quizForm.appendChild(div);
     });
 
