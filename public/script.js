@@ -17,20 +17,8 @@ function getDataFromURI() {
     };
 }
 
-const SPREADSHEET_ID = '1HSu0zVtvTu5N9uun6fp81dxEXayzNVGYdigu_7pYk20';
-const RANGE = 'danh_sach_cau_hoi_chi_tiet!A1:O';
-const API_KEY = 'AIzaSyA9g2qFUolpsu3_HVHOebdZb0NXnQgXlFM';
-
 // Biến toàn cục để kiểm tra trạng thái nộp bài
 let hasSubmitted = false;
-
-function loadGapiAndInitialize() {
-    const script = document.createElement('script');
-    script.src = "https://apis.google.com/js/api.js";
-    script.onload = initialize;
-    script.onerror = () => console.error('Failed to load Google API Client.');
-    document.body.appendChild(script);
-}
 
 function loadGapiAndLoadKetQua() {
     const script = document.createElement('script');
@@ -48,34 +36,16 @@ function loadGapiAndLoadKetQua() {
     document.body.appendChild(script);
 }
 
-function initialize() {
-    gapi.load('client', async () => {
-        try {
-            await gapi.client.init({
-                apiKey: API_KEY,
-                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4']
-            });
-            loadQuiz();
-        } catch (error) {
-            console.error('Initialization Error:', error);
-        }
-    });
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     const uriData = getDataFromURI();
-
     if (uriData.mode === 'xemketqua') {
-        document.getElementById('countdownTimerFixed').style.display = 'none';  // Ẩn đồng hồ
+        document.getElementById('countdownTimerFixed').style.display = 'none';
         loadGapiAndLoadKetQua();
     } else {
-        loadGapiAndInitialize(); // mặc định là làm bài
+        loadQuiz(); // dùng Web App thay cho Google API
     }
-
-    // Nếu bạn cần debug:
-    console.log("Dữ liệu từ URI:", uriData);
+    startCountdown(uriData.time || 60);
 });
-
 
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -86,123 +56,122 @@ function shuffleArray(array) {
 }
 
 async function loadQuiz() {
-    const res = await gapi.client.sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: RANGE
-    });
+    const uriData = getDataFromURI();
+    const maBoCauHoi = uriData.mabocauhoi || "";
 
-    const rows = res.result.values;
-    const headers = rows[0];
-    const uriData = getDataFromURI(); // lấy lại mabocauhoi từ URL
-    const maBoCauHoi = uriData.mabocauhoi;
+    const apiURL = `https://script.google.com/macros/s/AKfycbxCw9YdkYgQNQ7QRDoUSf_DnuKdizHcoPYZonMqVfTm7epLQeZuZkylZDHJd5coWHwkVg/exec?mabocauhoi=${maBoCauHoi}`;
 
-    let data = rows.slice(1);  // Bỏ dòng tiêu đề
+    try {
+        const response = await fetch(apiURL);
+        const data = await response.json();
 
-    // Lọc theo cột B (tức index 1) nếu có mabocauhoi
-    if (maBoCauHoi) {
-        data = data.filter(row => row[1] === maBoCauHoi);
-    }
-
-    data = shuffleArray(data); // Xáo trộn sau khi lọc
-
-    const index = (name) => headers.indexOf(name);
-    const quizForm = document.getElementById("quizForm");
-
-    window.correctAnswers = [];
-    window.questionTypes = [];
-    window.questionScores = [];
-
-    const sectionMap = {}; // Gom câu hỏi theo phần
-    const sectionOrder = []; // Lưu thứ tự xuất hiện phần
-
-    data.forEach((row, i) => {
-        const phanThi = row[index('phan_thi')] || 'Phần không xác định';
-        if (!sectionMap[phanThi]) {
-            sectionMap[phanThi] = [];
-            sectionOrder.push(phanThi);
+        if (!Array.isArray(data) || data.length === 0) {
+            document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Không tìm thấy dữ liệu bài kiểm tra.</p>`;
+            return;
         }
-        sectionMap[phanThi].push({ row, originalIndex: i });
-    });
 
-    // Chuyển số sang La Mã
-    function toRoman(num) {
-        const romanMap = [
-            [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
-            [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
-            [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
-        ];
-        return romanMap.reduce((acc, [val, roman]) => {
-            while (num >= val) {
-                acc += roman;
-                num -= val;
+        const headers = Object.keys(data[0]);
+        const index = (name) => headers.indexOf(name);
+        const quizForm = document.getElementById("quizForm");
+
+        window.correctAnswers = [];
+        window.questionTypes = [];
+        window.questionScores = [];
+        window.quizHeaders = headers;
+        window.quizRows = data.map(row => headers.map(h => row[h]));
+
+        const sectionMap = {};
+        const sectionOrder = [];
+
+        data.forEach((rowObj, i) => {
+            const row = headers.map(h => rowObj[h]);
+            const phanThi = row[index('phan_thi')] || 'Phần không xác định';
+            if (!sectionMap[phanThi]) {
+                sectionMap[phanThi] = [];
+                sectionOrder.push(phanThi);
             }
-            return acc;
-        }, '');
-    }
-
-    let globalIndex = 0; // dùng để đặt tên input
-
-    sectionOrder.forEach((phanThi, sectionIdx) => {
-        // Thêm tiêu đề phần
-        const sectionTitle = document.createElement("h3");
-        sectionTitle.style.marginTop = "30px";
-        sectionTitle.style.color = "#fffff";
-        sectionTitle.textContent = `${toRoman(sectionIdx + 1)}. ${phanThi}`;
-        quizForm.appendChild(sectionTitle);
-
-        sectionMap[phanThi].forEach(({ row }) => {
-            const question = row[index('noi_dung_cau_hoi')];
-            const type = (row[index('phan_loai')] || '').toLowerCase();
-            const options = ['a', 'b', 'c', 'd'].map(k => row[index('lua_chon_' + k)]);
-            const answer = row[index('dap_an')];
-            const diemRaw = row[index('diem_so')] || '0';
-            const diemSo = parseFloat(diemRaw.replace(',', '.')) || 0;
-            window.questionScores.push(diemSo);
-
-
-            window.correctAnswers.push(answer);
-            window.questionTypes.push(type);
-            window.questionScores.push(diemSo);
-
-            const qDiv = document.createElement("div");
-            qDiv.className = "question-block";
-            qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question} (${diemSo} điểm)</p>`;
-
-            if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
-                const optDiv = document.createElement("div");
-                optDiv.className = "options-container";
-
-                options.forEach((opt, j) => {
-                    if (opt) {
-                        const inputType = type === 'đa lựa chọn' ? 'checkbox' : 'radio';
-                        const value = String.fromCharCode(65 + j);
-                        optDiv.innerHTML += `
-                        <label>
-                            <input type="${inputType}" name="q${globalIndex}" value="${value}">
-                            <span>${value}. ${opt}</span>
-                        </label>`;
-                    }
-                });
-
-                qDiv.appendChild(optDiv);
-
-            } else if (type === 'tự luận') {
-                qDiv.innerHTML += `<textarea name="q${globalIndex}" rows="4" placeholder="Nhập câu trả lời..."></textarea>`;
-            } else if (type === 'số') {
-                qDiv.innerHTML += `<input type="number" name="q${globalIndex}" min="1" placeholder="Nhập số > 0">`;
-            } else if (type === 'ngày tháng') {
-                qDiv.innerHTML += `<input type="date" name="q${globalIndex}">`;
-            }
-
-            quizForm.appendChild(qDiv);
-            globalIndex++;
+            sectionMap[phanThi].push({ row, originalIndex: i });
         });
-    });
 
-    window.quizRows = data.map(row => row); // lưu từng dòng dữ liệu
-    window.quizHeaders = headers;           // lưu tiêu đề để tra cột
+        function toRoman(num) {
+            const romanMap = [
+                [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+                [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+                [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+            ];
+            return romanMap.reduce((acc, [val, roman]) => {
+                while (num >= val) {
+                    acc += roman;
+                    num -= val;
+                }
+                return acc;
+            }, '');
+        }
 
+        let globalIndex = 0;
+
+        sectionOrder.forEach((phanThi, sectionIdx) => {
+            const sectionTitle = document.createElement("h3");
+            sectionTitle.style.marginTop = "30px";
+            sectionTitle.textContent = `${toRoman(sectionIdx + 1)}. ${phanThi}`;
+            quizForm.appendChild(sectionTitle);
+
+            sectionMap[phanThi].forEach(({ row }) => {
+                const question = row[index('noi_dung_cau_hoi')];
+                const type = (row[index('phan_loai')] || '').toLowerCase();
+                const options = ['a', 'b', 'c', 'd'].map(k => row[index('lua_chon_' + k)]);
+                const answer = row[index('dap_an')];
+                const diemRaw = row[index('diem_so')] || '0';
+                const diemSo = parseFloat(
+                    (typeof diemRaw === 'string' ? diemRaw : String(diemRaw)).replace(',', '.')
+                ) || 0;
+
+
+                window.correctAnswers.push(answer);
+                window.questionTypes.push(type);
+                window.questionScores.push(diemSo);
+
+                const qDiv = document.createElement("div");
+                qDiv.className = "question-block";
+                qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question} (${diemSo} điểm)</p>`;
+
+                if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
+                    const optDiv = document.createElement("div");
+                    optDiv.className = "options-container";
+
+                    options.forEach((opt, j) => {
+                        if (opt) {
+                            const inputType = type === 'đa lựa chọn' ? 'checkbox' : 'radio';
+                            const value = String.fromCharCode(65 + j);
+                            optDiv.innerHTML += `
+                                <label>
+                                    <input type="${inputType}" name="q${globalIndex}" value="${value}">
+                                    <span>${value}. ${opt}</span>
+                                </label>`;
+                        }
+                    });
+
+                    qDiv.appendChild(optDiv);
+
+                } else if (type === 'tự luận') {
+                    qDiv.innerHTML += `<textarea name="q${globalIndex}" rows="4" placeholder="Nhập câu trả lời..."></textarea>`;
+                } else if (type === 'số') {
+                    qDiv.innerHTML += `<input type="number" name="q${globalIndex}" min="1" placeholder="Nhập số > 0">`;
+                } else if (type === 'ngày tháng') {
+                    qDiv.innerHTML += `<input type="date" name="q${globalIndex}">`;
+                }
+
+                quizForm.appendChild(qDiv);
+                globalIndex++;
+            });
+        });
+
+    } catch (error) {
+        console.error("Lỗi khi tải bài kiểm tra:", error);
+        document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Lỗi khi tải dữ liệu. Vui lòng thử lại.</p>`;
+    }
 }
+
 
 
 // Hiển thị popup xác nhận
@@ -626,8 +595,3 @@ function startCountdown(durationInMinutes) {
         }
     }, 1000);
 }
-
-document.addEventListener("DOMContentLoaded", () => {
-    const { time } = getDataFromURI();
-    startCountdown(time); // Thời gian từ URL hoặc mặc định 60
-});
