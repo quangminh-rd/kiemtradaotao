@@ -1,4 +1,3 @@
-
 let startTime = Date.now();  // đánh dấu thời điểm bắt đầu làm bài
 
 function getDataFromURI() {
@@ -21,19 +20,8 @@ function getDataFromURI() {
 let hasSubmitted = false;
 
 function loadGapiAndLoadKetQua() {
-    const script = document.createElement('script');
-    script.src = "https://apis.google.com/js/api.js";
-    script.onload = () => {
-        gapi.load('client', async () => {
-            await gapi.client.init({
-                apiKey: API_KEY,
-                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4']
-            });
-            loadKetQua();
-        });
-    };
-    script.onerror = () => console.error('Failed to load Google API');
-    document.body.appendChild(script);
+    // Gọi trực tiếp đến Web App thay vì dùng gapi
+    loadKetQua();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -435,7 +423,6 @@ function submitQuiz() {
     });
 }
 
-
 async function loadKetQua() {
     const { id } = getDataFromURI();
 
@@ -444,136 +431,111 @@ async function loadKetQua() {
         return;
     }
 
-    const res = await gapi.client.sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: "ket_qua_kiem_tra!A1:Z"
-    });
-
-    const rows = res.result.values;
-    const headers = rows[0];
-    const dataRows = rows.slice(1); // bỏ dòng tiêu đề
-
-    const index = (name) => headers.indexOf(name);
-    const idCol = index('id');
-
-    if (idCol === -1) {
-        document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Không tìm thấy cột 'id' trong sheet.</p>`;
-        return;
-    }
-
-    // Tìm dòng có id khớp với URI
-    const row = dataRows.find(r => (r[idCol] || "") === id);
-
-    if (!row) {
-        document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Không tìm thấy bài thi với ID <strong>${id}</strong>.</p>`;
-        return;
-    }
-
-    // Lấy thông tin từ dòng dữ liệu
-    const hoTen = row[index('ho_va_ten')] || '';
-    const chucDanh = row[index('chuc_danh')] || '';
-    const boPhan = row[index('bo_phan')] || '';
-    const soDienThoai = row[index('so_dien_thoai')] || '';
-    const email = row[index('email')] || '';
-    const ngayGioNop = row[index('ngay_gio_nop')] || '';
-    const thoiGiamlam = row[index('thoi_gian_lam_bai')] || '';
-    const tongDiemDatDuoc = row[index('so_diem')] || '0';
-    const tongDiemToiDa = row[index('tong_diem')] || '0';
-    const soCauDung = row[index('so_cau_dung')] || '0';
-    const tongSoCau = row[index('tong_so_cau')] || '0';
-
-    // Ẩn form nhập thông tin người dùng ban đầu
-    document.getElementById("userInfo").style.display = 'none';
-
-    // Tạo phần hiển thị thông tin người làm và kết quả
-    const infoDiv = document.createElement("div");
-    infoDiv.className = "user-result-info";
-    infoDiv.style.marginBottom = "30px";
-    infoDiv.style.padding = "15px";
-    infoDiv.style.backgroundColor = "#f5f5f5";
-    infoDiv.style.borderRadius = "8px";
-    infoDiv.style.display = "grid";
-    infoDiv.style.gridTemplateColumns = "1fr 1fr";
-    infoDiv.style.gap = "15px";
-
-    infoDiv.innerHTML = `
-            <div>
-                <p><strong>Họ và tên:</strong> <span style="color: red; font-weight: bold;">${hoTen}</span></p>
-                <p><strong>Số điện thoại:</strong> <span style="color: red; font-weight: bold;">${soDienThoai}</span></p>
-                <p><strong>Email:</strong> <span style="color: red; font-weight: bold;">${email}</span></p>
-            </div>
-            <div>
-                <p><strong>Chức danh:</strong> <span style="color: red; font-weight: bold;">${chucDanh}</span></p>
-                <p><strong>Bộ phận:</strong> <span style="color: red; font-weight: bold;">${boPhan}</span></p>
-            </div>
-            <div style="grid-column: 1 / -1; text-align: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
-                <p><strong>Số câu đúng:</strong> <span style="color: red; font-weight: bold;">${soCauDung}/${tongSoCau}</span></p>
-                <p><strong>Số điểm:</strong> <span style="color: red; font-weight: bold;">${tongDiemDatDuoc}/${tongDiemToiDa}</span></p>
-                <p><strong>Thời gian nộp:</strong> <span style="color: red; font-weight: bold;">${ngayGioNop}</span></p>
-                <p><strong>Thời gian làm bài:</strong> <span style="color: red; font-weight: bold;">${thoiGiamlam}</span></p>
-            </div>
-    `;
-
-    // Chèn phần thông tin vào trước form bài làm
-    document.querySelector(".quiz-wrapper").insertBefore(infoDiv, document.getElementById("quizForm"));
-
-    // Ẩn nút nộp bài
-    document.querySelector('button[type="button"]').style.display = 'none';
-
-    const listCauHoiRaw = row[index('list_cau_hoi')] || '[]';
-    const listDapAnRaw = row[index('list_dap_an')] || '[]';
-    const listTraLoiRaw = row[index('list_cau_tra_loi')] || '[]';
-    const listDiemRaw = row[index('list_diem_tung_cau')] || '[]';
-
-
-    let listCauHoi = [], listDapAn = [], listTraLoi = [], listDiem = [];
+    const apiURL = `https://script.google.com/macros/s/AKfycbxCw9YdkYgQNQ7QRDoUSf_DnuKdizHcoPYZonMqVfTm7epLQeZuZkylZDHJd5coWHwkVg/exec?mode=xemketqua&id=${id}`;
 
     try {
-        listCauHoi = JSON.parse(listCauHoiRaw);
-        listDapAn = JSON.parse(listDapAnRaw);
-        listTraLoi = JSON.parse(listTraLoiRaw);
-        listDiem = JSON.parse(listDiemRaw); // ✅ Thêm dòng này
-    } catch (e) {
-        document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Dữ liệu JSON không hợp lệ.</p>`;
-        return;
-    }
+        const response = await fetch(apiURL);
+        const data = await response.json();
 
-    const quizForm = document.getElementById("quizForm");
-    quizForm.innerHTML = "";
-
-    listCauHoi.forEach((cau, i) => {
-        const div = document.createElement("div");
-        div.className = "question-block";
-
-        const dapAnDung = listDapAn[i] || '';
-        const traLoi = listTraLoi[i] || '(Không trả lời)';
-
-        let diemRaw = listDiem[i] || 0;
-        if (typeof diemRaw === 'string') {
-            diemRaw = diemRaw.trim().replace(',', '.');
+        if (data.error) {
+            document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">${data.error}</p>`;
+            return;
         }
-        const diemDatDuoc = parseFloat(diemRaw) || 0;
 
-        const traLoiColor = diemDatDuoc > 0 ? '#28a745' : '#dc3545';  // ✅ màu xanh nếu đạt điểm
+        const quizForm = document.getElementById("quizForm");
+        quizForm.innerHTML = "";
 
-        div.innerHTML = `
-        <p>
-            <strong>Câu ${i + 1}:</strong> ${cau}
-            <span style="margin-left: 10px; color: ${diemDatDuoc > 0 ? 'green' : 'red'};">
-                — Đạt được: ${diemDatDuoc} điểm
-            </span>
-        </p>
-        <p style="margin-left: 10px; color: ${traLoiColor};">Câu trả lời: ${traLoi}</p>
-        <p style="margin-left: 10px; color: #28a745;">Đáp án đúng: ${dapAnDung}</p>
-    `;
+        // Ẩn form người dùng
+        document.getElementById("userInfo").style.display = 'none';
+        document.querySelector('button[type="button"]').style.display = 'none';
 
-        quizForm.appendChild(div);
-    });
+        // Lấy thông tin người dùng
+        const hoTen = data.ho_va_ten || '';
+        const chucDanh = data.chuc_danh || '';
+        const boPhan = data.bo_phan || '';
+        const soDienThoai = data.so_dien_thoai || '';
+        const email = data.email || '';
+        const ngayGioNop = data.ngay_gio_nop || '';
+        const thoiGianLamBai = data.thoi_gian_lam_bai || '';
+        const soCauDung = data.so_cau_dung || '0';
+        const tongSoCau = data.tong_so_cau || '0';
+        const tongDiem = data.so_diem || '0';
+        const diemToiDa = data.tong_diem || '0';
 
+        // Hiển thị thông tin người dùng
+        const infoDiv = document.createElement("div");
+        infoDiv.className = "user-result-info";
+        infoDiv.style.marginBottom = "30px";
+        infoDiv.style.padding = "15px";
+        infoDiv.style.backgroundColor = "#f5f5f5";
+        infoDiv.style.borderRadius = "8px";
+        infoDiv.style.display = "grid";
+        infoDiv.style.gridTemplateColumns = "1fr 1fr";
+        infoDiv.style.gap = "15px";
 
-
-    document.getElementById("quizResult").innerHTML = `
+        infoDiv.innerHTML = `
+            <div>
+                <p><strong>Họ và tên:</strong> <span style="color: red;">${hoTen}</span></p>
+                <p><strong>Số điện thoại:</strong> <span style="color: red;">${soDienThoai}</span></p>
+                <p><strong>Email:</strong> <span style="color: red;">${email}</span></p>
+            </div>
+            <div>
+                <p><strong>Chức danh:</strong> <span style="color: red;">${chucDanh}</span></p>
+                <p><strong>Bộ phận:</strong> <span style="color: red;">${boPhan}</span></p>
+            </div>
+            <div style="grid-column: 1 / -1; text-align: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                <p><strong>Số câu đúng:</strong> <span style="color: red;">${soCauDung}/${tongSoCau}</span></p>
+                <p><strong>Số điểm:</strong> <span style="color: red;">${tongDiem}/${diemToiDa}</span></p>
+                <p><strong>Thời gian nộp:</strong> <span style="color: red;">${ngayGioNop}</span></p>
+                <p><strong>Thời gian làm bài:</strong> <span style="color: red;">${thoiGianLamBai}</span></p>
+            </div>
         `;
+        document.querySelector(".quiz-wrapper").insertBefore(infoDiv, quizForm);
+
+        // Lấy danh sách câu hỏi và đáp án
+        let listCauHoi = [], listDapAn = [], listTraLoi = [], listDiem = [];
+
+        try {
+            listCauHoi = JSON.parse(data.list_cau_hoi || "[]");
+            listDapAn = JSON.parse(data.list_dap_an || "[]");
+            listTraLoi = JSON.parse(data.list_cau_tra_loi || "[]");
+            listDiem = JSON.parse(data.list_diem_tung_cau || "[]");
+        } catch (e) {
+            quizForm.innerHTML = `<p style="color:red; text-align:center;">Dữ liệu bị lỗi, không thể hiển thị kết quả.</p>`;
+            return;
+        }
+
+        listCauHoi.forEach((cau, i) => {
+            const div = document.createElement("div");
+            div.className = "question-block";
+
+            const dapAnDung = listDapAn[i] || '';
+            const traLoi = listTraLoi[i] || '(Không trả lời)';
+
+            let diemRaw = listDiem[i] || 0;
+            if (typeof diemRaw === 'string') {
+                diemRaw = diemRaw.trim().replace(',', '.');
+            }
+            const diemDatDuoc = parseFloat(diemRaw) || 0;
+            const traLoiColor = diemDatDuoc > 0 ? '#28a745' : '#dc3545';
+
+            div.innerHTML = `
+                <p>
+                    <strong>Câu ${i + 1}:</strong> ${cau}
+                    <span style="margin-left: 10px; color: ${traLoiColor};">
+                        — Đạt được: ${diemDatDuoc} điểm
+                    </span>
+                </p>
+                <p style="margin-left: 10px; color: ${traLoiColor};">Câu trả lời: ${traLoi}</p>
+                <p style="margin-left: 10px; color: #28a745;">Đáp án đúng: ${dapAnDung}</p>
+            `;
+            quizForm.appendChild(div);
+        });
+
+    } catch (err) {
+        console.error("Lỗi khi load kết quả:", err);
+        document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Lỗi khi tải dữ liệu. Vui lòng thử lại sau.</p>`;
+    }
 }
 
 function startCountdown(durationInMinutes) {
