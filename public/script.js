@@ -363,7 +363,8 @@ function submitQuiz() {
             cauHoi: cauHoi,
             listDapAn: listDapAnText,
             cauTraloi: cauTraloi,
-            diemTungCau: diemTungCau  // ✅ THÊM DÒNG NÀY
+            diemTungCau: diemTungCau,
+            mabocauhoi: getDataFromURI().mabocauhoi
         })
 
     }).then(res => res.text()).then(txt => {
