@@ -121,7 +121,15 @@ async function loadQuiz() {
 
                 const qDiv = document.createElement("div");
                 qDiv.className = "question-block";
-                qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question} (${diemSo} điểm)</p>`;
+                let huongDanLuaChon = '';
+                if (type === 'trắc nghiệm') {
+                    huongDanLuaChon = ' — <em style="color: gray;">Chọn 1 đáp án đúng</em>';
+                } else if (type === 'đa lựa chọn') {
+                    huongDanLuaChon = ' — <em style="color: gray;">Chọn nhiều đáp án đúng</em>';
+                }
+
+                qDiv.innerHTML = `<p>Câu ${globalIndex + 1}: ${question} (${diemSo} điểm)${huongDanLuaChon}</p>`;
+
 
                 if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
                     const optDiv = document.createElement("div");
