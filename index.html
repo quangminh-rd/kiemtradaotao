@@ -8,7 +8,7 @@
     <script src="./public/script.js" defer></script>
     <script src="./public/export-excel.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.2.0/exceljs.min.js"></script>
-
+    <link rel="icon" type="image/png" href="./public/favicon.png">
 </head>
 
 <body>
@@ -16,29 +16,30 @@
     <div class="quiz-wrapper">
         <div class="quiz-header">
             <img src="https://i.imgur.com/vfwvNd4.jpg" alt="Logo" />
-            <h2>BÀI KIỂM TRA</h2>
             <div id="countdownTimer" style="font-size: 18px; color: red; margin-top: 10px;"></div>
         </div>
         <div id="userInfo" class="user-info">
-            <label>Họ và Tên (*):
-                <input type="text" name="hoTen" placeholder="Nhập họ tên..." required>
+            <h2 style="grid-column: 1 / -1; text-align: center;">BÀI KIỂM TRA</h2>
+            <label>Họ và Tên:
+                <input type="text" name="hoTen" placeholder="Đang tải..." required>
             </label>
             <label>Chức danh:
-                <input type="text" name="chucDanh" placeholder="Nhập chức danh...">
+                <input type="text" name="chucDanh" placeholder="Đang tải...">
             </label>
-            <label>Số điện thoại (*):
-                <input type="tel" name="soDienThoai" placeholder="Nhập số điện thoại...">
+            <label>Số điện thoại:
+                <input type="tel" name="soDienThoai" placeholder="Đang tải...">
             </label>
             <label>Bộ phận:
-                <input type="text" name="boPhan" placeholder="Nhập bộ phận...">
+                <input type="text" name="boPhan" placeholder="Đang tải...">
             </label>
             <label>Email:
-                <input type="email" name="email" placeholder="Nhập email...">
+                <input type="email" name="email" placeholder="Đang tải...">
             </label>
         </div>
         <form id="quizForm"></form>
         <button type="button" onclick="showConfirmPopup()">Nộp bài</button>
         <div id="quizResult"></div>
+
     </div>
 
     <!-- Popup xác nhận -->
