@@ -1,4 +1,5 @@
 let startTime = Date.now();  // đánh dấu thời điểm bắt đầu làm bài
+let isSavingPoints = false;
 
 function getDataFromURI() {
     const url = window.location.href;
@@ -19,8 +20,61 @@ function getDataFromURI() {
 // Biến toàn cục để kiểm tra trạng thái nộp bài
 let hasSubmitted = false;
 
-// POST endpoint GAS (dùng cùng base script.google.com như GET)
+// POST endpoint GAS (dùng để load dữ liệu) - giữ nguyên
 const GAS_POST_URL = "https://script.google.com/macros/s/AKfycbxCw9YdkYgQNQ7QRDoUSf_DnuKdizHcoPYZonMqVfTm7epLQeZuZkylZDHJd5coWHwkVg/exec";
+
+// ====== CẤU HÌNH APPSHEET ======
+const APPSHEET_REGION = 'www.appsheet.com';
+const APPSHEET_APPID = '72cc8380-b94d-4ee2-bcad-6dd645c74ee5';
+const APPSHEET_TABLE = 'dao_tao_chi_tiet';
+const APPSHEET_KEY = 'V2-HqykE-iKHm9-TLFWq-Nc1pZ-8153l-gjSbo-jJioX-4GRo9';
+
+// Hàm helper gọi AppSheet API
+async function callAppSheetAction({ action = 'Add', rows = [], table = APPSHEET_TABLE }) {
+    const url = `https://${APPSHEET_REGION}/api/v2/apps/${encodeURIComponent(APPSHEET_APPID)}/tables/${encodeURIComponent(table)}/Action?applicationAccessKey=${encodeURIComponent(APPSHEET_KEY)}`;
+
+    const body = {
+        Action: action,
+        Properties: {},
+        Rows: rows
+    };
+
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+
+    const text = await res.text();
+    try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
+    catch (e) { return { ok: res.ok, status: res.status, data: text }; }
+}
+
+// Map payload -> row cho AppSheet (stringify các mảng để lưu an toàn)
+function buildAppSheetRowFromPayload(postPayload) {
+    const row = {
+        id: postPayload.id || '',
+        ngay_gio_nop: postPayload.ngayGioNop || '',
+        thoi_gian_lam_bai: postPayload.thoiGianLamBai || '',
+        trang_thai_cham_bai: postPayload.trangthaiChamBai || '',
+        ngay_gio_cham: postPayload.ngayGioCham || '',
+        so_cau_dung: postPayload.soCauDung ?? 0,
+        tong_so_cau: postPayload.tongSoCau ?? 0,
+        so_diem: postPayload.tongDiemDatDuoc ?? 0,
+        tong_diem: postPayload.tongDiemToiDa ?? 0,
+        list_kieu_cham_diem: JSON.stringify(postPayload.kieuChamDiem || []),
+        list_cau_hoi: JSON.stringify(postPayload.cauHoi || []),
+        list_loai_cau_hoi: JSON.stringify(postPayload.loaiCauHoi || []),
+        list_diem_toi_da: JSON.stringify(postPayload.diemToiDa || []),
+        list_diem_tung_cau: JSON.stringify(postPayload.diemTungCau || []),
+        list_dap_an: JSON.stringify(postPayload.dapAn || []),
+        list_cau_tra_loi: JSON.stringify(postPayload.cauTraloi || [])
+    };
+    return row;
+}
+
 
 function loadGapiAndLoadKetQua() {
     // Gọi trực tiếp đến Web App thay vì dùng gapi
@@ -30,9 +84,8 @@ function loadGapiAndLoadKetQua() {
 document.addEventListener('DOMContentLoaded', () => {
     const uriData = getDataFromURI();
     const submitBtn = document.querySelector('button[type="button"]');
-    if (uriData.mode !== 'baikiemtra') {
-        submitBtn.style.display = 'none';
-    }
+    submitBtn.style.display = 'none';
+    document.getElementById('countdownTimerFixed').style.display = 'none';
 
     // Ẩn/hiện userInfo theo mode
     if (uriData.mode === 'baikiemtra') {
@@ -42,10 +95,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (uriData.mode === 'xemketqua') {
-        document.getElementById('countdownTimerFixed').style.display = 'none';
         loadGapiAndLoadKetQua();
     } else if (uriData.mode === 'chambai') {
-        document.getElementById('countdownTimerFixed').style.display = 'none';
         loadBaiNopDeCham();
     } else {
         loadQuiz();
@@ -93,7 +144,28 @@ async function loadQuiz() {
         const response = await fetch(apiURL);
         const data = await response.json();
 
-        if (data.detail) loadUserInfoFromDetail(data.detail);
+        if (data.detail) {
+            loadUserInfoFromDetail(data.detail);
+
+            if (data.detail.ngay_gio_nop && data.detail.ngay_gio_nop.trim() !== "") {
+                document.getElementById("quizForm").innerHTML = `
+                        <div class="submission-status">
+                            <h3>THÔNG BÁO</h3>
+                            <p class="success-message">Bài làm của bạn đã được ghi nhận!</p>
+                        </div>
+                    `;
+                // Ẩn luôn nút & đồng hồ
+                document.querySelector('button[type="button"]').style.display = 'none';
+                document.getElementById('countdownTimerFixed').style.display = 'none';
+                loadKetQua();
+                return;
+            } else {
+                // Nếu chưa nộp -> hiện nút và đồng hồ
+                document.querySelector('button[type="button"]').style.display = 'block';
+                document.getElementById('countdownTimerFixed').style.display = 'block';
+            }
+        }
+
 
         if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
             document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Không tìm thấy dữ liệu bài kiểm tra.</p>`;
@@ -216,7 +288,6 @@ async function loadQuiz() {
         document.getElementById("quizForm").innerHTML = `<p style="color:red; text-align:center;">Lỗi khi tải dữ liệu. Vui lòng thử lại.</p>`;
     }
 }
-
 
 
 // Hiển thị popup xác nhận
@@ -378,94 +449,139 @@ async function submitQuiz() {
     const listdiemToida = window.questionScores.map(x => x);
 
     const hasEssay = window.questionTypes.some(type => type === 'tự luận');
-    const trangthaiChamBai = hasEssay ? "Chờ chấm điểm câu tự luận" : "Đã chấm";
+    const trangthaiChamBai = hasEssay ? "Chờ chấm câu tự luận" : "Đã chấm";
     const ngaygioChamBai = hasEssay ? "" : now;
 
-    // --- Gửi POST dưới dạng form (URLSearchParams) để tránh preflight CORS ---
+    // --- Gửi lên AppSheet thay vì GAS ---
     try {
         const postPayload = {
-            id: getDataFromURI().id,
+            id: getDataFromURI().id || '',
+            // thời gian / trạng thái
             ngayGioNop: now,
-            trangthaiChamBai,
-            ngaygioChamBai,
+            trangthaiChamBai: trangthaiChamBai,
+            ngayGioCham: ngaygioChamBai,          // <- ghi đúng tên mà buildAppSheetRowFromPayload đọc
+            // điểm
             tongDiemDatDuoc: score,
             tongDiemToiDa: maxScore,
             soCauDung,
             tongSoCau: total,
             thoiGianLamBai: durationFormatted,
-            cauHoi,
-            kieuchamdiem,
-            loaicauHoi,
-            listdiemToida,
-            listDapAn: listDapAnText,
-            cauTraloi,
-            diemTungCau,
-            mabocauhoi: getDataFromURI().mabocauhoi
+            // danh sách / meta câu hỏi — NÊN dùng đúng camelCase mà buildAppSheet... mong đợi
+            kieuChamDiem: kieuchamdiem,          // thay kieuchamdiem -> kieuChamDiem
+            cauHoi: cauHoi,
+            loaiCauHoi: loaicauHoi,               // thay loaicauHoi -> loaiCauHoi
+            diemToiDa: listdiemToida,             // thay listdiemToida -> diemToiDa
+            dapAn: listDapAnText,                 // thay listDapAn -> dapAn
+            cauTraloi: cauTraloi,
+            diemTungCau: diemTungCau,
+            mabocauhoi: getDataFromURI().mabocauhoi || ''
         };
 
-        const form = new URLSearchParams();
-        form.append('payload', JSON.stringify(postPayload));
-        // form.append('secret', 'MY_SECRET'); // nếu bạn dùng secret, bật dòng này và kiểm tra trong GAS
+        const row = buildAppSheetRowFromPayload(postPayload);
+        const action = postPayload.id ? 'Edit' : 'Add';
 
-        const res = await fetch(GAS_POST_URL, {
-            method: 'POST',
-            body: form // **không set headers** để tránh preflight
-        });
+        const result = await callAppSheetAction({ action, rows: [row], table: APPSHEET_TABLE });
+        console.log('AppSheet trả về (submitQuiz):', result);
 
-        const json = await res.json().catch(() => null);
-        console.log("GAS trả về:", res.status, json);
+        if (!result.ok) {
+            throw new Error(`AppSheet API lỗi, status=${result.status} data=${JSON.stringify(result.data)}`);
+        }
 
-        if (json && json.status && json.status.toLowerCase() === 'ok') {
-            // thành công (giữ nguyên phần UI)
-            hasSubmitted = true;
-            submitButton.style.display = 'none';
-            document.querySelectorAll('input, textarea, select').forEach(el => el.disabled = true);
+        // Nếu tới đây là OK
+        hasSubmitted = true;
+        submitButton.style.display = 'none';
+        document.querySelectorAll('input, textarea, select').forEach(el => el.disabled = true);
 
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'submission-status';
-            statusDiv.innerHTML = `
+        // --- Bắt đầu block thay thế: hiển thị THÔNG BÁO tách trắc nghiệm / tự luận ---
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'submission-status';
+
+        // tính lại số liệu riêng cho trắc nghiệm và tự luận dựa trên diemTungCau, questionTypes, questionScores
+        const diemTung = diemTungCau || [];
+        const qTypes = window.questionTypes || [];
+        const qScores = window.questionScores || [];
+
+        const tracIdxs = [];
+        const essayIdxs = [];
+        for (let i = 0; i < qTypes.length; i++) {
+            const t = (qTypes[i] || '').toLowerCase();
+            if (t === 'trắc nghiệm' || t === 'đa lựa chọn') tracIdxs.push(i);
+            if (t === 'tự luận') essayIdxs.push(i);
+        }
+
+        const sumByIndex = (idxs, arr) => idxs.reduce((s, i) => s + (parseFloat(arr[i]) || 0), 0);
+        const countCorrectByIndex = (idxs, arr) => idxs.reduce((c, i) => c + ((parseFloat(arr[i]) || 0) > 0 ? 1 : 0), 0);
+
+        const tracScore = sumByIndex(tracIdxs, diemTung);
+        const tracMax = sumByIndex(tracIdxs, qScores);
+        const tracCorrect = countCorrectByIndex(tracIdxs, diemTung);
+        const tracTotal = tracIdxs.length;
+
+        const essayScore = sumByIndex(essayIdxs, diemTung);
+        const essayMax = sumByIndex(essayIdxs, qScores);
+        const essayCorrect = countCorrectByIndex(essayIdxs, diemTung);
+        const essayTotal = essayIdxs.length;
+
+        // Xây dựng HTML một cách điều kiện
+        let html = `
     <h3>THÔNG BÁO</h3>
     <p class="success-message">Bài làm của bạn đã được ghi nhận thành công!</p>
-    <p><strong>Tổng điểm phần trắc nghiệm:</strong> ${score}/${maxScore}</p>
-    <p><strong>Kết quả phần trắc nghiệm:</strong> ${soCauDung}/${total} câu đúng</p>
-    ${hasEssay ? '<p><strong>Kết quả phần tự luận sẽ được thông báo sau!</strong></p>' : ''}
+
+    `;
+
+        // Chỉ thêm phần tự luận nếu có câu tự luận
+        if (essayTotal > 0) {
+            html += `
+                <h4>PHẦN TRẮC NGHIỆM</h4>
+                <p><strong>Số câu đúng:</strong> ${tracCorrect}/${tracTotal} câu</p>
+                ${window.kieuChamDiem.every(k => k === 'Theo câu') ? '' : `<p><strong>Tổng điểm:</strong> ${tracScore}/${tracMax}</p>`}
+                <h4>PHẦN TỰ LUẬN</h4>
+                <p><strong>Số câu tự luận:</strong> ${essayTotal} câu</p>
+                <p><strong>Kết quả sẽ được thông báo sau khi chấm xong!</strong></p>
+              `;
+        } else {
+            html += `
+                ${window.kieuChamDiem.every(k => k === 'Theo câu') ? '' : `<p><strong>Tổng điểm:</strong> ${tracScore}/${tracMax}</p>`}
+                <p><strong>Kết quả:</strong> ${tracCorrect}/${tracTotal} câu đúng</p>
+              `;
+
+        }
+
+        // Thêm thông tin chung (thời gian nộp / thời gian làm bài)
+        html += `
     <p><strong>Thời gian nộp:</strong> ${now}</p>
     <p><strong>Thời gian làm bài:</strong> ${durationFormatted}</p>
     `;
-            document.querySelector('.quiz-wrapper').appendChild(statusDiv);
 
-            // tô màu correct/wrong (giữ nguyên)
-            for (let i = 0; i < total; i++) {
-                const type = window.questionTypes[i];
-                const correct = (window.correctAnswers[i] || '').toString().split(',').map(a => a.trim());
-                const inputs = document.querySelectorAll(`[name="q${i}"]`);
-                if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
-                    inputs.forEach(input => {
-                        const label = input.closest('label');
-                        const val = input.value;
-                        if (correct.includes(val)) {
-                            label.style.backgroundColor = '#d4edda';
-                            label.style.border = '1px solid #28a745';
-                        }
-                        if (input.checked && !correct.includes(val)) {
-                            label.style.backgroundColor = '#f8d7da';
-                            label.style.border = '1px solid #dc3545';
-                        }
-                    });
-                }
+        statusDiv.innerHTML = html;
+        document.querySelector('.quiz-wrapper').appendChild(statusDiv);
+        // --- Kết thúc block thay thế ---
+
+
+        // tô màu correct/wrong (giữ nguyên)
+        for (let i = 0; i < total; i++) {
+            const type = window.questionTypes[i];
+            const correct = (window.correctAnswers[i] || '').toString().split(',').map(a => a.trim());
+            const inputs = document.querySelectorAll(`[name="q${i}"]`);
+            if (type === 'trắc nghiệm' || type === 'đa lựa chọn') {
+                inputs.forEach(input => {
+                    const label = input.closest('label');
+                    const val = input.value;
+                    if (correct.includes(val)) {
+                        label.style.backgroundColor = '#d4edda';
+                        label.style.border = '1px solid #28a745';
+                    }
+                    if (input.checked && !correct.includes(val)) {
+                        label.style.backgroundColor = '#f8d7da';
+                        label.style.border = '1px solid #dc3545';
+                    }
+                });
             }
-
-        } else {
-            console.error("Lỗi từ GAS:", json);
-            alert("Có lỗi khi gửi dữ liệu lên server: " + (json?.message || "Không xác định"));
-            submitButton.disabled = false;
-            submitButton.classList.remove('loading');
-            submitButton.textContent = "Nộp bài";
         }
 
     } catch (err) {
-        console.error("Lỗi gửi dữ liệu:", err);
-        alert("Đã xảy ra lỗi khi gửi kết quả. Vui lòng thử lại.");
+        console.error("Lỗi gửi dữ liệu lên AppSheet:", err);
+        alert("Đã xảy ra lỗi khi gửi kết quả. Nếu gặp lỗi CORS, hãy dùng proxy (GAS) để gửi từ server. Lỗi chi tiết xem console.");
         submitButton.disabled = false;
         submitButton.classList.remove('loading');
         submitButton.textContent = "Nộp bài";
@@ -519,6 +635,20 @@ async function loadKetQua() {
         const tongDiem = data.so_diem || '0';
         const diemToiDa = data.tong_diem || '0';
 
+        // Lấy danh sách câu hỏi và đáp án
+        let listKieuchamdiem = [], listCauHoi = [], listDapAn = [], listTraLoi = [], listDiem = [];
+
+        try {
+            listKieuchamdiem = JSON.parse(data.list_kieu_cham_diem || "[]");
+            listCauHoi = JSON.parse(data.list_cau_hoi || "[]");
+            listDapAn = JSON.parse(data.list_dap_an || "[]");
+            listTraLoi = JSON.parse(data.list_cau_tra_loi || "[]");
+            listDiem = JSON.parse(data.list_diem_tung_cau || "[]");
+        } catch (e) {
+            quizForm.innerHTML = `<p style="color:red; text-align:center;">Dữ liệu bị lỗi, không thể hiển thị kết quả.</p>`;
+            return;
+        }
+
         // Hiển thị thông tin người dùng
         const infoDiv = document.createElement("div");
         infoDiv.className = "user-result-info";
@@ -542,26 +672,16 @@ async function loadKetQua() {
     </div>
     <div style="grid-column: 1 / -1; text-align: left; margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
         <p><strong>Số câu đúng:</strong> <span class="highlight-text">${soCauDung}/${tongSoCau}</span></p>
-        <p><strong>Số điểm:</strong> <span class="highlight-text">${tongDiem}/${diemToiDa}</span></p>
-        <p><strong>Thời gian nộp:</strong> <span class="highlight-text">${ngayGioNop}</span></p>
+        ${listKieuchamdiem.some(k => k === 'Theo điểm')
+                ? `<p><strong>Số điểm:</strong> <span class="highlight-text">${tongDiem}/${diemToiDa}</span></p>`
+                : ''}
+        <p><strong>Thời gian nộp:</strong> <span class="highlight-text">${addHoursToDateString(ngayGioNop, 0)}</span></p>
         <p><strong>Thời gian làm bài:</strong> <span class="highlight-text">${thoiGianLamBai}</span></p>
     </div>
     `;
         document.querySelector(".quiz-wrapper").insertBefore(infoDiv, quizForm);
 
-        // Lấy danh sách câu hỏi và đáp án
-        let listKieuchamdiem = [], listCauHoi = [], listDapAn = [], listTraLoi = [], listDiem = [];
 
-        try {
-            listKieuchamdiem = JSON.parse(data.list_kieu_cham_diem || "[]");
-            listCauHoi = JSON.parse(data.list_cau_hoi || "[]");
-            listDapAn = JSON.parse(data.list_dap_an || "[]");
-            listTraLoi = JSON.parse(data.list_cau_tra_loi || "[]");
-            listDiem = JSON.parse(data.list_diem_tung_cau || "[]");
-        } catch (e) {
-            quizForm.innerHTML = `<p style="color:red; text-align:center;">Dữ liệu bị lỗi, không thể hiển thị kết quả.</p>`;
-            return;
-        }
 
         listCauHoi.forEach((cau, i) => {
             const div = document.createElement("div");
@@ -633,6 +753,22 @@ function startCountdown(durationInMinutes) {
     }, 1000);
 }
 
+function addHoursToDateString(dateStr, hours) {
+    if (!dateStr) return '';
+    let d;
+    // Nếu là Date object thì clone luôn
+    if (dateStr instanceof Date) {
+        d = new Date(dateStr.getTime());
+    } else {
+        // Nếu là chuỗi, thử parse
+        d = new Date(dateStr);
+        if (isNaN(d)) return dateStr; // nếu parse lỗi thì giữ nguyên
+    }
+    d.setHours(d.getHours() + hours);
+    // Trả lại chuỗi dạng dd/MM/yyyy HH:mm:ss
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 
 // Hàm mới: Tải bài nộp để chấm điểm
 async function loadBaiNopDeCham() {
@@ -661,41 +797,6 @@ async function loadBaiNopDeCham() {
         document.getElementById("userInfo").style.display = 'none';
         document.querySelector('button[type="button"]').style.display = 'none';
         const quizForm = document.getElementById("quizForm");
-        quizForm.innerHTML = "";
-
-        // Hiển thị thông tin người làm bài
-        const infoDiv = document.createElement("div");
-        infoDiv.className = "user-result-info";
-        infoDiv.style.marginBottom = "30px";
-        infoDiv.style.padding = "15px";
-        infoDiv.style.backgroundColor = "#f5f5f5";
-        infoDiv.style.borderRadius = "8px";
-        infoDiv.style.display = "grid";
-        infoDiv.style.gridTemplateColumns = "1fr 1fr";
-        infoDiv.style.gap = "15px";
-        const title = document.createElement("h2");
-        title.textContent = "CHẤM ĐIỂM BÀI KIỂM TRA";
-        title.className = "grading-header";
-        quizForm.appendChild(title);
-        infoDiv.innerHTML = `
-    <div>
-        <p><strong>Họ và tên:</strong> <span class="highlight-text">${data.ho_va_ten || ''}</span></p>
-        <p><strong>Số điện thoại:</strong> <span class="highlight-text">${data.so_dien_thoai || ''}</span></p>
-        <p><strong>Email:</strong> <span class="highlight-text">${data.email || ''}</span></p>
-    </div>
-    <div>
-        <p><strong>Chức danh:</strong> <span class="highlight-text">${data.chuc_danh || ''}</span></p>
-        <p><strong>Bộ phận:</strong> <span class="highlight-text">${data.don_vi_phu_trach || ''}</span></p>
-    </div>
-    <div style="grid-column: 1 / -1; text-align: left; margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
-        <p><strong>Trạng thái chấm bài:</strong> <span class="highlight-text">${data.trang_thai_cham_bai || ''}</span></p>
-        <p><strong>Tổng điểm hiện tại:</strong> <span class="highlight-text">${data.so_diem || 0}/${data.tong_diem || 0}</span></p>
-        <p><strong>Thời gian nộp:</strong> <span class="highlight-text">${data.ngay_gio_nop || ''}</span></p>
-        <p><strong>Thời gian làm bài:</strong> <span class="highlight-text">${data.thoi_gian_lam_bai || ''}</span></p>
-    </div>
-    `;
-
-        quizForm.appendChild(infoDiv);
 
         // Lấy dữ liệu câu hỏi và câu trả lời
         let listKieuchamdiem = [], listCauHoi = [], listDapAn = [], listTraLoi = [], listDiem = [], listLoaiCau = [];
@@ -730,10 +831,49 @@ async function loadBaiNopDeCham() {
             listDiemToiDa = [];
         }
 
+        quizForm.innerHTML = "";
+
+        // Hiển thị thông tin người làm bài
+        const infoDiv = document.createElement("div");
+        infoDiv.className = "user-result-info";
+        infoDiv.style.marginBottom = "30px";
+        infoDiv.style.padding = "15px";
+        infoDiv.style.backgroundColor = "#f5f5f5";
+        infoDiv.style.borderRadius = "8px";
+        infoDiv.style.display = "grid";
+        infoDiv.style.gridTemplateColumns = "1fr 1fr";
+        infoDiv.style.gap = "15px";
+        const title = document.createElement("h2");
+        title.textContent = "CHẤM ĐIỂM BÀI KIỂM TRA";
+        title.className = "grading-header";
+        quizForm.appendChild(title);
+        infoDiv.innerHTML = `
+    <div>
+        <p><strong>Họ và tên:</strong> <span class="highlight-text">${data.ho_va_ten || ''}</span></p>
+        <p><strong>Số điện thoại:</strong> <span class="highlight-text">${data.so_dien_thoai || ''}</span></p>
+        <p><strong>Email:</strong> <span class="highlight-text">${data.email || ''}</span></p>
+    </div>
+    <div>
+        <p><strong>Chức danh:</strong> <span class="highlight-text">${data.chuc_danh || ''}</span></p>
+        <p><strong>Bộ phận:</strong> <span class="highlight-text">${data.don_vi_phu_trach || ''}</span></p>
+    </div>
+    <div style="grid-column: 1 / -1; text-align: left; margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+        <p><strong>Trạng thái chấm bài:</strong> <span class="highlight-text">${data.trang_thai_cham_bai || ''}</span></p>
+        <p><strong>Số câu trả lời đúng:</strong> <span class="highlight-text">${data.so_cau_dung || 0}/${data.tong_so_cau || 0}</span></p>
+        ${listKieuchamdiem.some(k => k === 'Theo điểm')
+                ? `<p><strong>Tổng điểm đạt được:</strong> <span class="highlight-text">${data.so_diem || 0}/${data.tong_diem || 0}</span></p>`
+                : ''}
+        <p><strong>Thời gian nộp:</strong> <span class="highlight-text">${addHoursToDateString(data.ngay_gio_nop || '', 0)}</span></p>
+        <p><strong>Thời gian làm bài:</strong> <span class="highlight-text">${data.thoi_gian_lam_bai || ''}</span></p>
+    </div>
+    `;
+
+        quizForm.appendChild(infoDiv);
+
         // Tạo container cho phần chấm điểm
         const gradingContainer = document.createElement("div");
         gradingContainer.className = "grading-container";
-        gradingContainer.innerHTML = `<h3>CÂU TỰ LUẬN CẦN CHẤM ĐIỂM</h3>`;
+        gradingContainer.innerHTML = `<h3>PHẦN TỰ LUẬN</h3>`;
 
         let hasEssay = false;
 
@@ -798,7 +938,7 @@ async function loadBaiNopDeCham() {
             const saveBtn = document.createElement("button");
             saveBtn.type = "button"; // 🔧 Ngăn hành vi submit mặc định
             saveBtn.className = "save-btn";
-            saveBtn.textContent = "Lưu Điểm";
+            saveBtn.textContent = "Lưu kết quả";
             saveBtn.onclick = () => saveEssayPoints(data.id, listLoaiCau, listDiem, data);
             gradingContainer.appendChild(saveBtn);
         }
@@ -822,8 +962,24 @@ async function loadBaiNopDeCham() {
 }
 
 // Hàm mới: Lưu điểm câu tự luận
+// Hàm mới: Lưu điểm câu tự luận (đã bổ sung disable + trạng thái "Đang lưu điểm...")
 async function saveEssayPoints(submissionId, questionTypes, currentPoints, rawData = {}) {
     const quizForm = document.getElementById("quizForm");
+    const saveButton = quizForm.querySelector('.save-btn');
+
+    // Nếu đã đang lưu thì ngăn chặn
+    if (isSavingPoints) return;
+    // Nếu không tìm thấy nút thì vẫn tiếp tục nhưng không đổi UI
+    if (saveButton) {
+        isSavingPoints = true;
+        saveButton.disabled = true;
+        saveButton.classList.add('loading');
+        saveButton.textContent = "Đang lưu kết quả...";
+    } else {
+        // vẫn set flag tránh gọi nhiều lần
+        isSavingPoints = true;
+    }
+
     const updatedPoints = [...currentPoints];
     let hasChange = false;
 
@@ -861,7 +1017,17 @@ async function saveEssayPoints(submissionId, questionTypes, currentPoints, rawDa
         }
     });
 
-    if (!hasChange) { alert("Không có điểm nào thay đổi."); return; }
+    if (!hasChange) {
+        // khôi phục trạng thái nút nếu không thay đổi
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.classList.remove('loading');
+            saveButton.textContent = "Lưu Điểm";
+        }
+        isSavingPoints = false;
+        alert("Không có điểm nào thay đổi.");
+        return;
+    }
 
     try {
         const now = new Date().toLocaleString("vi-VN");
@@ -874,42 +1040,35 @@ async function saveEssayPoints(submissionId, questionTypes, currentPoints, rawDa
 
         const trangthaiChamBai = "Đã chấm";
         const ngaygioChamBai = now;
+        const tongSoCau = updatedPoints.length;
 
         const postPayload = {
             id: data.id || '',
             trangthaiChamBai,
-            ngaygioChamBai,
+            ngayGioCham: ngaygioChamBai || new Date().toLocaleString("vi-VN"),
             tongDiemDatDuoc,
             tongDiemToiDa,
             soCauDung,
-            tongSoCau: updatedPoints.length,
+            tongSoCau: tongSoCau,
             thoiGianLamBai: data.thoi_gian_lam_bai || '',
+            ngayGioNop: addHoursToDateString(data.ngay_gio_nop || '', 0),
             cauHoi: JSON.parse(data.list_cau_hoi || "[]"),
-            loaicauHoi: questionTypes,
-            listdiemToida: listdiemToida,
-            listDapAn: JSON.parse(data.list_dap_an || "[]"),
+            kieuChamDiem: kieuChamList || [],
+            loaiCauHoi: questionTypes,
+            diemToiDa: listdiemToida,
+            dapAn: JSON.parse(data.list_dap_an || "[]"),
             cauTraloi: JSON.parse(data.list_cau_tra_loi || "[]"),
             diemTungCau: updatedPoints,
             mabocauhoi: data.ma_bo_cau_hoi || ''
         };
 
-        // Gửi dưới dạng form để tránh preflight
-        const form = new URLSearchParams();
-        form.append('payload', JSON.stringify(postPayload));
-        // form.append('secret', 'MY_SECRET'); // nếu bạn dùng secret
+        const row = buildAppSheetRowFromPayload(postPayload);
+        const action = postPayload.id ? 'Edit' : 'Add';
+        const result = await callAppSheetAction({ action, rows: [row], table: APPSHEET_TABLE });
+        console.log('AppSheet trả về (saveEssayPoints):', result);
 
-        const res = await fetch(GAS_POST_URL, {
-            method: 'POST',
-            body: form
-        });
-
-        const json = await res.json().catch(() => null);
-        console.log("GAS trả về (saveEssayPoints):", res.status, json);
-
-        if (!(json && json.status && json.status.toLowerCase() === 'ok')) {
-            console.error("Lỗi khi lưu điểm:", json);
-            alert("Có lỗi khi gửi điểm cập nhật: " + (json?.message || "Không xác định"));
-            return;
+        if (!result.ok) {
+            throw new Error(`AppSheet API lỗi, status=${result.status} data=${JSON.stringify(result.data)}`);
         }
 
         const oldStatus = document.querySelector('.submission-status');
@@ -919,17 +1078,34 @@ async function saveEssayPoints(submissionId, questionTypes, currentPoints, rawDa
         statusDiv.className = 'submission-status';
         statusDiv.innerHTML = `
     <h3>THÔNG BÁO</h3>
-    <p class="success-message">Đã gửi điểm cập nhật thành công!</p>
-    <p><strong>Tổng điểm phần tự luận:</strong> ${tongDiemDatDuoc}/${tongDiemToiDa}</p>
-    <p><strong>Thời gian lưu:</strong> ${now}</p>
+    <p class="success-message">Đã gửi kết quả chấm bài thành công!</p>
+    <p><strong>Số câu trả lời đúng:</strong> ${soCauDung}/${tongSoCau}</p>
+    ${kieuChamList.some(k => k === 'Theo điểm')
+                ? `<p><strong>Tổng điểm đạt được:</strong> ${tongDiemDatDuoc}/${tongDiemToiDa}</p>`
+                : ''}
+    <p><strong>Thời gian chấm bài:</strong> ${addHoursToDateString(now, 0)}</p>
     `;
         quizForm.appendChild(statusDiv);
 
-        const saveButton = quizForm.querySelector('.save-btn');
-        if (saveButton) saveButton.style.display = 'none';
+        if (saveButton) {
+            // ẩn nút sau khi lưu thành công (hành vi cũ)
+            saveButton.style.display = 'none';
+        }
+
+        // 🔒 Khóa tất cả input chấm điểm sau khi lưu
+        quizForm.querySelectorAll('.grading-container input').forEach(el => el.disabled = true);
 
     } catch (err) {
-        console.error("Lỗi khi gửi dữ liệu:", err);
-        alert("Đã xảy ra lỗi khi gửi kết quả. Vui lòng thử lại.");
+        console.error("Lỗi khi gửi dữ liệu lên AppSheet:", err);
+        alert("Đã xảy ra lỗi khi gửi kết quả. Nếu gặp lỗi CORS, hãy dùng proxy (GAS) để gửi từ server. Lỗi chi tiết xem console.");
+        // khôi phục nút để cho người dùng thử lại
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.classList.remove('loading');
+            saveButton.textContent = "Lưu Điểm";
+        }
+    } finally {
+        // luôn reset flag, nếu nút đã ẩn thì vẫn reset flag để tránh treo
+        isSavingPoints = false;
     }
 }
